@@ -1,0 +1,96 @@
+Submitting consumer File------------
+
+
+from kafka import KafkaConsumer
+import json
+from pyhive import hive
+
+# Kafka consumer configuration
+consumer = KafkaConsumer(
+    'news_topic',
+    bootstrap_servers='localhost:9092',
+    auto_offset_reset='earliest',
+    value_deserializer=lambda x: json.loads(x.decode('utf-8'))
+)
+
+# List to store news articles
+news_articles = []
+
+print("Listening for messages on topic 'news_topic'...\n")
+
+for message in consumer:
+    article = message.value
+    title = article.get("title", "No title")
+    source = article.get("source", "Unknown source")
+    url = article.get("url", "")
+    description = article.get("description", "")
+    sentiment = article.get("sentiment", "No sentiment data")
+    sentiment_score = article.get("sentiment_score", "No sentiment score")
+
+    # Create a dictionary for the article
+    article_data = {
+        "title": title,
+        "source": source,
+        "url": url,
+        "description": description,
+        "sentiment": sentiment,
+        "sentiment_score": sentiment_score
+    }
+
+    # Append the article dictionary to the list
+    news_articles.append(article_data)
+
+    print(f"Title: {title}")
+    print(f"Source: {source}")
+    print(f"URL: {url}")
+    print(f"Description: {description}")
+    print(f"Sentiment: {sentiment}")
+    print(f"Sentiment Score: {sentiment_score}\n")
+    print('-' * 80 + '\n')
+
+# Hive connection configuration
+hive_conn = hive.connect(host='localhost', port=10000, username='Varun', database='newsdb')
+
+cursor = hive_conn.cursor()
+
+# Ensure the database exists
+try:
+    print("Attempting to create database...")
+    cursor.execute("CREATE DATABASE IF NOT EXISTS newsdb")
+    print("Database 'newsdb' created or already exists.")
+except Exception as e:
+    print("Error creating database:", str(e))
+
+# Set the database to use
+try:
+    print("Using 'newsdb' database...")
+    cursor.execute("USE newsdb")
+    print("Using 'newsdb'.")
+except Exception as e:
+    print("Error using database:", str(e))
+
+# Create Hive table if it doesn't exist
+try:
+    print("Attempting to create table...")
+    create_table_query = """
+    CREATE TABLE IF NOT EXISTS news_table (
+        title STRING,
+        source STRING,
+        url STRING,
+        description STRING,
+        sentiment STRING,
+        sentiment_score STRING
+    ) LOCATION '/BigData/hive/news_articles'
+    """
+    cursor.execute(create_table_query)
+    print("Table 'news_table' created or already exists.")
+except Exception as e:
+    print("Error creating table:", str(e))
+
+hive_conn.commit()
+
+print("News articles loaded into Hive table")
+
+# Close the Hive connection
+cursor.close()
+hive_conn.close()

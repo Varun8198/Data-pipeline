@@ -1,0 +1,61 @@
+Final Producer----------------------
+
+
+
+import json
+import time
+import requests
+from transformers import pipeline
+from secrets import key
+from kafka import KafkaProducer
+
+base_url = "https://newsapi.org/v2/everything"
+queries = ["technology", "finance", "health"]
+
+# Set up Kafka producer
+producer = KafkaProducer(
+    bootstrap_servers='localhost:9092',
+    value_serializer=lambda v: json.dumps(v).encode('utf-8')
+)
+
+# Set up Hugging Face sentiment analysis pipeline
+sentiment_analyzer = pipeline("sentiment-analysis")    
+
+while True:  
+    for custom_query in queries:
+        url = f"{base_url}?q={custom_query}&apiKey={key}&pageSize=10"
+        response = requests.get(url)
+
+        if response.status_code == 200:
+            data = response.json()
+            articles = data.get("articles", [])
+
+            for article in articles:
+                title = article.get("title", "No title")
+                source = article.get("source", {}).get("name", "Unknown source")
+                description = article.get("description", "")
+
+                # Perform sentiment analysis on the article description
+                sentiment = sentiment_analyzer(description)[0]
+
+                # Message to be sent to Kafka Consumer
+                message = {
+                    "title": title,
+                    "source": source,
+                    "url": article.get("url", ""),
+                    "description": description,
+                    "sentiment": sentiment['label'],
+                    "sentiment_score": sentiment['score']
+                }
+
+                # Send message to Kafka topic
+                producer.send('news_topic', value=message)
+                producer.flush()
+                print("Now, wait for 60 seconds to get new message")
+                time.sleep(60)
+
+        else:
+            print(f"Failed to fetch data for query '{custom_query}':", response.status_code)
+
+# Close the producer
+producer.close()
